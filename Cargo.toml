@@ -1,0 +1,8 @@
+[package]
+name = "defparallel"
+version = "0.1.0"
+authors = ["Philip Gatt <gattster@gmail.com>"]
+
+[dependencies]
+ansi-escapes = "0.1.0"
+ansi_term = "0.11.0"
