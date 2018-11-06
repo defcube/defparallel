@@ -56,9 +56,7 @@ fn main() {
     }
 
     for thread_state in threads {
-        if thread_state.output.len() > 0 {
-            println!("Output for {}:\n{}\n\n", thread_state.command, thread_state.output);
-        }
+        thread_state.possibly_print_output();
     }
 }
 
@@ -67,7 +65,8 @@ struct ThreadState {
     had_error: bool,
     start: Instant,
     command: String,
-    output: String,
+    stdout: String,
+    stderr: String,
 }
 
 impl ThreadState {
@@ -84,16 +83,19 @@ impl ThreadState {
     }
 
     fn set_output(&mut self, output: std::process::Output) {
-        let mut to = String::new();
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        if stdout.len() > 0 {
-            to.push_str(&format!("====STDOUT====\n{}", stdout));
+        self.stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        self.stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    }
+
+    fn possibly_print_output(&self) {
+        if self.stdout.len() > 0 && self.had_error {
+            println!("{}", Color::White.bold().underline().paint(format!("STDOUT for {}", self.command)));
+            println!("{}\n", self.stdout);
         }
-        if stderr.len() > 0 {
-            to.push_str(&format!("====STDERR====\n{}", stderr));
+        if self.stderr.len() > 0  {
+            println!("{}", Color::White.bold().underline().paint(format!("STDERR for {}", self.command)));
+            println!("{}\n", self.stderr);
         }
-        self.output = to;
     }
 }
 
@@ -144,8 +146,8 @@ fn run_commands_from_stdin() -> (mpsc::Receiver<ThreadMessage>, Vec<ThreadState>
             is_running: true,
             had_error: false,
             start: Instant::now(),
-            output: String::from(""),
-
+            stdout: String::new(),
+            stderr: String::new(),
         };
         threads.push(ts);
         i += 1;
