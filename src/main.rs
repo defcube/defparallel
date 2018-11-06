@@ -10,7 +10,6 @@ use std::clone::Clone;
 enum ThreadMessage {
     Done(usize, std::process::Output),
     Error(usize, std::process::Output),
-    Fail(usize, std::io::Error),
 }
 
 fn main() {
@@ -29,11 +28,6 @@ fn main() {
                         threads[i].had_error = true;
                         threads[i].is_running = false;
                         threads[i].set_output(output);
-                    }
-                    ThreadMessage::Fail(i, error) => {
-                        threads[i].is_running = false;
-                        threads[i].had_error = true;
-                        threads[i].output = error.to_string();
                     }
                 }
             }
@@ -127,7 +121,7 @@ fn run_commands_from_stdin() -> (mpsc::Receiver<ThreadMessage>, Vec<ThreadState>
                 continue
             }
         };
-        let command = command.trim();
+        let command = String::from(command.trim());
         if command.len() == 0 {
             continue
         }
@@ -135,10 +129,10 @@ fn run_commands_from_stdin() -> (mpsc::Receiver<ThreadMessage>, Vec<ThreadState>
         let command_parts: Vec<String> = command.split(' ').map(|x| String::from(x)).collect();
 
         let tx1 = tx.clone();
+        let command2 = command.clone();
         std::thread::spawn(move || {
             match Command::new(&command_parts[0])
                 .args(command_parts[1..command_parts.len()].iter())
-                .envs(std::env::vars())
                 .output() {
                 Ok(output) => {
                     if !output.status.success() {
@@ -148,7 +142,8 @@ fn run_commands_from_stdin() -> (mpsc::Receiver<ThreadMessage>, Vec<ThreadState>
                     }
                 }
                 Err(e) => {
-                    tx1.send(ThreadMessage::Fail(i, e)).expect("Failed to send Error");
+                    println!("Failed to start {}: {}", command2, e);
+                    std::process::exit(1)
                 }
             };
         });
