@@ -19,9 +19,7 @@ fn main() {
     let screen = crossterm::Screen::default();
     let ct = crossterm::Crossterm::new(&screen);
     let cursor = ct.cursor();
-//    cursor.goto(5,5);
-//    let (x, y) = cursor.pos();
-//    println!("x{} y{}", x, y);
+    let (max_x, _) = ct.terminal().terminal_size();
 
     {
         let mut first_write = true;
@@ -50,7 +48,9 @@ fn main() {
                      Color::White.bold().underline().paint("Running Parallel"),
                      ansi_escapes::EraseEndLine);
             for thread in (&threads).iter() {
-                println!("{}{}", thread.colored_string(), ansi_escapes::EraseEndLine);
+                let mut cs = thread.colored_string();
+                cs.truncate(max_x as usize);
+                println!("{}{}", cs, ansi_escapes::EraseEndLine);
             }
 
             let mut all_done = true;
@@ -124,15 +124,15 @@ fn run_commands_from_stdin() -> (mpsc::Receiver<ThreadMessage>, Vec<ThreadState>
                 if n == 0 {
                     break;
                 }
-            },
+            }
             Err(e) => {
                 println!("Error: {}", e);
-                continue
+                continue;
             }
         };
         let command = String::from(command.trim());
         if command.len() == 0 {
-            continue
+            continue;
         }
         let command_parts: Vec<String> = command.split(' ').map(|x| String::from(x)).collect();
 
