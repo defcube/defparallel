@@ -18,7 +18,6 @@ fn main() {
 
     let screen = crossterm::Screen::default();
     let ct = crossterm::Crossterm::new(&screen);
-    let cursor = ct.cursor();
     let (max_x, _) = ct.terminal().terminal_size();
 
     {
@@ -40,9 +39,8 @@ fn main() {
 
             if first_write {
                 first_write = false;
-                cursor.save_position();
             } else {
-                cursor.reset_position();
+                print!("{}", ansi_escapes::CursorUp(threads.len() as u16 + 1));
             }
             println!("{}{}",
                      Color::White.bold().underline().paint("Running Parallel"),
@@ -65,7 +63,6 @@ fn main() {
                 }
             }
             if all_done {
-                println!("All done");
                 break;
             }
         }
