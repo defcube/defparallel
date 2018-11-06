@@ -138,6 +138,7 @@ fn run_commands_from_stdin() -> (mpsc::Receiver<ThreadMessage>, Vec<ThreadState>
         std::thread::spawn(move || {
             match Command::new(&command_parts[0])
                 .args(command_parts[1..command_parts.len()].iter())
+                .envs(std::env::vars())
                 .output() {
                 Ok(output) => {
                     if !output.status.success() {
