@@ -1,5 +1,6 @@
 extern crate ansi_escapes;
 extern crate ansi_term;
+extern crate crossterm;
 
 use std::process::Command;
 use std::sync::mpsc;
@@ -14,6 +15,13 @@ enum ThreadMessage {
 
 fn main() {
     let (cx, mut threads) = run_commands_from_stdin();
+
+    let screen = crossterm::Screen::default();
+    let ct = crossterm::Crossterm::new(&screen);
+    let cursor = ct.cursor();
+//    cursor.goto(5,5);
+//    let (x, y) = cursor.pos();
+//    println!("x{} y{}", x, y);
 
     {
         let mut first_write = true;
@@ -34,8 +42,9 @@ fn main() {
 
             if first_write {
                 first_write = false;
+                cursor.save_position();
             } else {
-                print!("{}", ansi_escapes::CursorUp(threads.len() as u16 + 1));
+                cursor.reset_position();
             }
             println!("{}{}",
                      Color::White.bold().underline().paint("Running Parallel"),
@@ -125,7 +134,6 @@ fn run_commands_from_stdin() -> (mpsc::Receiver<ThreadMessage>, Vec<ThreadState>
         if command.len() == 0 {
             continue
         }
-        println!("\"{}\"", command);
         let command_parts: Vec<String> = command.split(' ').map(|x| String::from(x)).collect();
 
         let tx1 = tx.clone();
