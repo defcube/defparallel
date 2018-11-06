@@ -16,12 +16,7 @@ enum ThreadMessage {
 fn main() {
     let (cx, mut threads) = run_commands_from_stdin();
 
-    let screen = crossterm::Screen::default();
-    let ct = crossterm::Crossterm::new(&screen);
-    let (max_x, _) = ct.terminal().terminal_size();
-
     {
-        let mut first_write = true;
         loop {
             if let Ok(msg) = cx.recv_timeout(std::time::Duration::from_millis(500)) {
                 match msg {
@@ -37,18 +32,10 @@ fn main() {
                 }
             }
 
-            if first_write {
-                first_write = false;
-            } else {
-                print!("{}", ansi_escapes::CursorUp(threads.len() as u16 + 1));
-            }
-            println!("{}{}",
-                     Color::White.bold().underline().paint("Running Parallel"),
-                     ansi_escapes::EraseEndLine);
+            println!("{}{}", ansi_escapes::ClearScreen,
+                     Color::White.bold().underline().paint("Running Parallel"));
             for thread in (&threads).iter() {
-                let mut cs = thread.colored_string();
-                cs.truncate(max_x as usize);
-                println!("{}{}", cs, ansi_escapes::EraseEndLine);
+                println!("{}", thread.colored_string());
             }
 
             let mut all_done = true;
