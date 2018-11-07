@@ -44,9 +44,8 @@ fn main() {
                     all_done = true;
                     break;
                 }
-                if thread_state.is_running {
+                if thread_state.is_running & all_done == true{
                     all_done = false;
-                    break;
                 }
             }
             if all_done {
