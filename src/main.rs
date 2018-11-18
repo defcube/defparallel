@@ -1,20 +1,51 @@
 extern crate ansi_escapes;
 extern crate ansi_term;
+#[macro_use]
+extern crate structopt;
 
+use ansi_term::Color;
+use std::clone::Clone;
 use std::process::Command;
 use std::sync::mpsc;
-use ansi_term::Color;
 use std::time::Instant;
-use std::clone::Clone;
 
-enum ThreadMessage {
-    Done(usize, std::process::Output),
-    Error(usize, std::process::Output),
-    Fail(usize, std::io::Error),
+#[derive(StructOpt, Debug)]
+struct Opts {
+    #[structopt(short)]
+    /// Instead of reading from STDIN to get commands, execute the commands specified here.
+    /// Call -c multiple times.
+    commands: Vec<String>,
 }
 
 fn main() {
-    let (cx, mut threads) = run_commands_from_stdin();
+    let opts: Opts = structopt::StructOpt::from_args();
+    let commandcx = {
+        let (commandtx, commandcx) = mpsc::sync_channel(0);
+        let commands = opts.commands;
+        std::thread::spawn(move || {
+            if commands.len() >= 1 {
+                for command in commands {
+                    commandtx.send(command).expect("Sending command");
+                }
+            } else {
+                loop {
+                    let mut command = String::new();
+                    let n = std::io::stdin()
+                        .read_line(&mut command)
+                        .expect("Error reading line");
+                    if n == 0 {
+                        break;
+                    }
+                    commandtx
+                        .send(command.to_string())
+                        .expect("Sending command");
+                }
+            };
+        });
+        commandcx
+    };
+
+    let (cx, mut threads) = run_commands(commandcx);
 
     {
         let mut first_write = true;
@@ -43,9 +74,11 @@ fn main() {
             } else {
                 print!("{}", ansi_escapes::CursorUp(threads.len() as u16 + 1));
             }
-            println!("{}{}",
-                     Color::White.bold().underline().paint("Running Parallel"),
-                     ansi_escapes::EraseEndLine);
+            println!(
+                "{}{}",
+                Color::White.bold().underline().paint("Running Parallel"),
+                ansi_escapes::EraseEndLine
+            );
             for thread in (&threads).iter() {
                 println!("{}{}", thread.colored_string(), ansi_escapes::EraseEndLine);
             }
@@ -62,17 +95,24 @@ fn main() {
                 }
             }
             if all_done {
-                println!("All done");
                 break;
             }
         }
     }
-
     for thread_state in threads {
         if thread_state.output.len() > 0 {
-            println!("Output for {}:\n{}\n\n", thread_state.command, thread_state.output);
+            println!(
+                "Output for {}:\n{}\n\n",
+                thread_state.command, thread_state.output
+            );
         }
     }
+}
+
+enum ThreadMessage {
+    Done(usize, std::process::Output),
+    Error(usize, std::process::Output),
+    Fail(usize, std::io::Error),
 }
 
 struct ThreadState {
@@ -86,7 +126,8 @@ struct ThreadState {
 impl ThreadState {
     fn colored_string(&self) -> String {
         let start = if self.is_running {
-            Color::Yellow.paint(format!("running {}s: ", self.start.elapsed().as_secs()))
+            Color::Yellow
+                .paint(format!("running {}s: ", self.start.elapsed().as_secs()))
                 .to_string()
         } else if self.had_error {
             Color::Red.paint("error: ").to_string()
@@ -110,44 +151,35 @@ impl ThreadState {
     }
 }
 
-fn run_commands_from_stdin() -> (mpsc::Receiver<ThreadMessage>, Vec<ThreadState>) {
+fn run_commands(
+    commands: mpsc::Receiver<String>,
+) -> (mpsc::Receiver<ThreadMessage>, Vec<ThreadState>) {
     let mut threads = vec![];
     let (tx, cx) = mpsc::channel();
     let mut i = 0;
-    loop {
-        let mut command = String::new();
-        match std::io::stdin().read_line(&mut command) {
-            Ok(n) => {
-                if n == 0 {
-                    break;
-                }
-            },
-            Err(e) => {
-                println!("Error: {}", e);
-                continue
-            }
-        };
-        let command = command.trim();
+    for command in commands {
         if command.len() == 0 {
-            continue
+            continue;
         }
-        println!("\"{}\"", command);
         let command_parts: Vec<String> = command.split(' ').map(|x| String::from(x)).collect();
-
         let tx1 = tx.clone();
         std::thread::spawn(move || {
             match Command::new(&command_parts[0])
                 .args(command_parts[1..command_parts.len()].iter())
-                .output() {
+                .output()
+            {
                 Ok(output) => {
                     if !output.status.success() {
-                        tx1.send(ThreadMessage::Error(i, output)).expect("Failed to send Error");
+                        tx1.send(ThreadMessage::Error(i, output))
+                            .expect("Failed to send Error");
                     } else {
-                        tx1.send(ThreadMessage::Done(i, output)).expect("Failed to send Done");
+                        tx1.send(ThreadMessage::Done(i, output))
+                            .expect("Failed to send Done");
                     }
                 }
                 Err(e) => {
-                    tx1.send(ThreadMessage::Fail(i, e)).expect("Failed to send Error");
+                    tx1.send(ThreadMessage::Fail(i, e))
+                        .expect("Failed to send Error");
                 }
             };
         });
@@ -157,7 +189,6 @@ fn run_commands_from_stdin() -> (mpsc::Receiver<ThreadMessage>, Vec<ThreadState>
             had_error: false,
             start: Instant::now(),
             output: String::from(""),
-
         };
         threads.push(ts);
         i += 1;
