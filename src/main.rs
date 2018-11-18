@@ -2,6 +2,7 @@ extern crate ansi_escapes;
 extern crate ansi_term;
 #[macro_use]
 extern crate structopt;
+extern crate crossterm;
 
 use ansi_term::Color;
 use std::clone::Clone;
@@ -48,7 +49,6 @@ fn main() {
     let (cx, mut threads) = run_commands(commandcx);
 
     {
-        let mut first_write = true;
         loop {
             if let Ok(msg) = cx.recv_timeout(std::time::Duration::from_millis(500)) {
                 match msg {
@@ -61,26 +61,16 @@ fn main() {
                         threads[i].is_running = false;
                         threads[i].set_output(output);
                     }
-                    ThreadMessage::Fail(i, error) => {
-                        threads[i].is_running = false;
-                        threads[i].had_error = true;
-                        threads[i].output = error.to_string();
-                    }
                 }
             }
 
-            if first_write {
-                first_write = false;
-            } else {
-                print!("{}", ansi_escapes::CursorUp(threads.len() as u16 + 1));
-            }
             println!(
                 "{}{}",
-                Color::White.bold().underline().paint("Running Parallel"),
-                ansi_escapes::EraseEndLine
+                ansi_escapes::ClearScreen,
+                Color::White.bold().underline().paint("Running Parallel")
             );
             for thread in (&threads).iter() {
-                println!("{}{}", thread.colored_string(), ansi_escapes::EraseEndLine);
+                println!("{}", thread.colored_string());
             }
 
             let mut all_done = true;
@@ -89,9 +79,8 @@ fn main() {
                     all_done = true;
                     break;
                 }
-                if thread_state.is_running {
+                if thread_state.is_running & all_done == true {
                     all_done = false;
-                    break;
                 }
             }
             if all_done {
@@ -100,19 +89,13 @@ fn main() {
         }
     }
     for thread_state in threads {
-        if thread_state.output.len() > 0 {
-            println!(
-                "Output for {}:\n{}\n\n",
-                thread_state.command, thread_state.output
-            );
-        }
+        thread_state.possibly_print_output();
     }
 }
 
 enum ThreadMessage {
     Done(usize, std::process::Output),
     Error(usize, std::process::Output),
-    Fail(usize, std::io::Error),
 }
 
 struct ThreadState {
@@ -120,7 +103,8 @@ struct ThreadState {
     had_error: bool,
     start: Instant,
     command: String,
-    output: String,
+    stdout: String,
+    stderr: String,
 }
 
 impl ThreadState {
@@ -138,16 +122,31 @@ impl ThreadState {
     }
 
     fn set_output(&mut self, output: std::process::Output) {
-        let mut to = String::new();
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        if stdout.len() > 0 {
-            to.push_str(&format!("====STDOUT====\n{}", stdout));
+        self.stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        self.stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    }
+
+    fn possibly_print_output(&self) {
+        if self.stdout.len() > 0 && self.had_error {
+            println!(
+                "{}",
+                Color::White
+                    .bold()
+                    .underline()
+                    .paint(format!("STDOUT for {}", self.command))
+            );
+            println!("{}\n", self.stdout);
         }
-        if stderr.len() > 0 {
-            to.push_str(&format!("====STDERR====\n{}", stderr));
+        if self.stderr.len() > 0 {
+            println!(
+                "{}",
+                Color::White
+                    .bold()
+                    .underline()
+                    .paint(format!("STDERR for {}", self.command))
+            );
+            println!("{}\n", self.stderr);
         }
-        self.output = to;
     }
 }
 
@@ -163,6 +162,7 @@ fn run_commands(
         }
         let command_parts: Vec<String> = command.split(' ').map(|x| String::from(x)).collect();
         let tx1 = tx.clone();
+        let command2 = command.clone();
         std::thread::spawn(move || {
             match Command::new(&command_parts[0])
                 .args(command_parts[1..command_parts.len()].iter())
@@ -178,8 +178,8 @@ fn run_commands(
                     }
                 }
                 Err(e) => {
-                    tx1.send(ThreadMessage::Fail(i, e))
-                        .expect("Failed to send Error");
+                    println!("Failed to start {}: {}", command2, e);
+                    std::process::exit(1)
                 }
             };
         });
@@ -188,7 +188,8 @@ fn run_commands(
             is_running: true,
             had_error: false,
             start: Instant::now(),
-            output: String::from(""),
+            stdout: String::new(),
+            stderr: String::new(),
         };
         threads.push(ts);
         i += 1;
